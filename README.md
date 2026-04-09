@@ -55,6 +55,9 @@ Recommended env vars:
 - `KEEPALIVE_USE_MOCK_DATA=true`: forces mock data even on macOS.
 - `KEEPALIVE_DEBUG=true`: turns on Photon debug logging.
 - `KEEPALIVE_STORE_PATH`: custom path for the persisted loop store.
+- `OPENAI_API_KEY`: optional. Enables structured OpenAI promise extraction and higher-quality draft generation.
+- `KEEPALIVE_OPENAI_MODEL`: optional. Defaults to `gpt-5-mini`.
+- `KEEPALIVE_OPENAI_BASE_URL`: optional. Useful if you proxy OpenAI traffic internally.
 
 ## Example commands
 
@@ -63,15 +66,18 @@ Recommended env vars:
 - `who have I been ignoring this week`
 - `what did I promise Bridget`
 - `draft a warm check in for Uncle Raj`
+- `forwarded recruiter message: Hey, just checking whether you can send over the deck before Friday.`
 
 ## Current scope
 
-The live agent is deterministic, not LLM-backed. It already handles:
+The live agent now handles:
 
 - follow-up reminders
 - reply checks
 - neglected-thread scans
-- promise summaries
-- warm check-in drafts
+- promise summaries with OpenAI fallback support
+- warm check-in drafts with OpenAI fallback support
+- forwarded-message analysis
+- snooze, edit, and cancel controls for active loops in the web console
 
-The next obvious step is adding an LLM layer for better promise extraction and higher-quality drafts while keeping Photon as the source of truth for thread state.
+Photon remains the source of truth for thread state. The OpenAI layer is optional and only upgrades extraction and drafting.
