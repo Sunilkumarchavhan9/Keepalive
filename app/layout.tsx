@@ -44,7 +44,15 @@ export default function RootLayout({
       lang="en"
       className={`${spaceGrotesk.variable} ${ibmPlexMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full bg-[#050914] text-white">{children}</body>
+      <body className="min-h-full bg-transparent text-[#0f2b4a]">
+        <a
+          href="#main-content"
+          className="focus-ring absolute left-4 top-4 z-50 -translate-y-24 bg-[#d8eeff] px-4 py-2 text-sm font-semibold text-[#112d4a] transition-transform duration-200 focus-visible:translate-y-0"
+        >
+          Skip to content
+        </a>
+        {children}
+      </body>
     </html>
   );
 }

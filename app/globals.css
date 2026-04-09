@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
 :root {
-  --background: #050914;
-  --foreground: #f6f8fc;
-  --muted: rgba(246, 248, 252, 0.72);
+  --background: #8fc7ff;
+  --foreground: #0f2b4a;
+  --muted: rgba(15, 43, 74, 0.72);
 }
 
 @theme inline {
@@ -19,13 +19,16 @@
 
 html {
   scroll-behavior: smooth;
+  color-scheme: light;
 }
 
 body {
   margin: 0;
-  background: var(--background);
+  background:
+    linear-gradient(180deg, #bde2ff 0%, #95cbff 28%, #7fb9f5 100%);
   color: var(--foreground);
   font-family: var(--font-space-grotesk), sans-serif;
+  overflow-x: hidden;
 }
 
 a {
@@ -34,55 +37,259 @@ a {
 }
 
 ::selection {
-  background: rgba(143, 246, 178, 0.28);
-  color: #f6f8fc;
+  background: rgba(43, 116, 217, 0.2);
+  color: #0f2b4a;
 }
 
-.hero-grid {
+.sky-stage {
+  background: linear-gradient(180deg, rgba(80, 146, 230, 0.1), rgba(80, 146, 230, 0) 58%);
+}
+
+.sky-grid {
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
-  background-size: 88px 88px;
-  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.72), transparent 92%);
+    linear-gradient(rgba(15, 43, 74, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 43, 74, 0.07) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.65), transparent 94%);
 }
 
-.orb {
+.sky-sheen {
+  background:
+    linear-gradient(120deg, rgba(255, 255, 255, 0) 15%, rgba(255, 255, 255, 0.28) 48%, rgba(255, 255, 255, 0) 78%);
+  transform: translateX(-35%);
+  animation: sheen-slide 16s linear infinite;
+}
+
+.cloud-layer {
   position: absolute;
   border-radius: 9999px;
-  filter: blur(80px);
+  filter: blur(20px);
+  opacity: 0.8;
+  background:
+    radial-gradient(circle at 30% 50%, rgba(255, 255, 255, 0.95), transparent 38%),
+    radial-gradient(circle at 54% 40%, rgba(255, 255, 255, 0.92), transparent 32%),
+    radial-gradient(circle at 72% 58%, rgba(255, 255, 255, 0.88), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.25));
+}
+
+.cloud-one {
+  left: -8%;
+  top: 8%;
+  height: 220px;
+  width: 520px;
+  animation: drift-right 36s linear infinite;
+}
+
+.cloud-two {
+  right: -12%;
+  top: 18%;
+  height: 260px;
+  width: 600px;
+  opacity: 0.62;
+  animation: drift-left 42s linear infinite;
+}
+
+.cloud-three {
+  left: 18%;
+  bottom: 14%;
+  height: 200px;
+  width: 460px;
+  opacity: 0.5;
+  animation: float-cloud 20s ease-in-out infinite;
+}
+
+.cloud-four {
+  right: 14%;
+  bottom: 28%;
+  height: 180px;
+  width: 360px;
+  opacity: 0.36;
+  animation: float-cloud 24s ease-in-out infinite reverse;
+}
+
+.sun-haze {
+  position: absolute;
+  right: 8%;
+  top: 6%;
+  height: 240px;
+  width: 240px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(255, 250, 223, 0.82) 0%, rgba(255, 250, 223, 0.34) 42%, rgba(255, 250, 223, 0) 78%);
+  filter: blur(6px);
+}
+
+.dashboard-shell {
+  position: relative;
+  z-index: 1;
+}
+
+.dashboard-panel {
+  border: 1px solid rgba(18, 57, 95, 0.14);
+  background:
+    linear-gradient(180deg, rgba(7, 30, 54, 0.8), rgba(8, 34, 60, 0.74)),
+    rgba(255, 255, 255, 0.12);
+  box-shadow: 0 22px 70px rgba(32, 88, 150, 0.16);
+}
+
+.dashboard-panel-light {
+  border: 1px solid rgba(18, 57, 95, 0.12);
+  background: rgba(246, 251, 255, 0.72);
+  box-shadow: 0 20px 55px rgba(44, 111, 177, 0.1);
+}
+
+.sky-video-panel {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(140deg, rgba(198, 230, 255, 0.32), rgba(34, 87, 147, 0.16)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0));
+}
+
+.sky-video-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 20% 26%, rgba(255, 255, 255, 0.4), transparent 16%),
+    radial-gradient(circle at 62% 28%, rgba(255, 255, 255, 0.24), transparent 14%),
+    linear-gradient(115deg, rgba(255, 255, 255, 0) 15%, rgba(255, 255, 255, 0.24) 48%, rgba(255, 255, 255, 0) 76%);
+  animation: sheen-slide 18s linear infinite;
+}
+
+.sky-video-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 22%),
+    repeating-linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.04) 0,
+      rgba(255, 255, 255, 0.04) 2px,
+      rgba(255, 255, 255, 0) 2px,
+      rgba(255, 255, 255, 0) 8px
+    );
   opacity: 0.55;
 }
 
-.orb-one {
-  top: 88px;
-  right: -40px;
-  height: 320px;
-  width: 320px;
-  background: rgba(125, 255, 179, 0.22);
-}
-
-.orb-two {
-  left: -80px;
-  top: 42%;
-  height: 420px;
-  width: 420px;
-  background: rgba(86, 161, 255, 0.2);
-}
-
-.bubble-shell {
-  position: relative;
-}
-
-.bubble-shell::after {
-  content: "";
+.video-cloud {
   position: absolute;
-  inset: auto 24px -22px auto;
-  height: 90px;
-  width: 90px;
   border-radius: 9999px;
-  background: radial-gradient(
-    circle,
-    rgba(143, 246, 178, 0.3) 0%,
-    rgba(143, 246, 178, 0) 72%
-  );
+  background: rgba(255, 255, 255, 0.68);
+  filter: blur(10px);
+}
+
+.video-cloud-one {
+  left: -8%;
+  top: 18%;
+  height: 110px;
+  width: 280px;
+  animation: drift-right 28s linear infinite;
+}
+
+.video-cloud-two {
+  right: -6%;
+  top: 46%;
+  height: 130px;
+  width: 320px;
+  opacity: 0.72;
+  animation: drift-left 31s linear infinite;
+}
+
+.panel-scroll {
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(91, 149, 212, 0.62) rgba(255, 255, 255, 0.12);
+}
+
+.panel-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.panel-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.panel-scroll::-webkit-scrollbar-thumb {
+  background: rgba(91, 149, 212, 0.72);
+  border-radius: 9999px;
+}
+
+.focus-ring {
+  outline: none;
+}
+
+.focus-ring:focus-visible {
+  box-shadow:
+    0 0 0 2px rgba(240, 248, 255, 0.95),
+    0 0 0 4px rgba(43, 116, 217, 0.45);
+}
+
+.surface-shadow {
+  box-shadow: 0 24px 72px rgba(34, 91, 150, 0.16);
+}
+
+.touch-manipulation {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(43, 116, 217, 0.12);
+}
+
+#main-content [id] {
+  scroll-margin-top: 2rem;
+}
+
+@keyframes drift-right {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(22%);
+  }
+}
+
+@keyframes drift-left {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-20%);
+  }
+}
+
+@keyframes float-cloud {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-18px);
+  }
+}
+
+@keyframes sheen-slide {
+  from {
+    transform: translateX(-40%);
+  }
+
+  to {
+    transform: translateX(55%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
