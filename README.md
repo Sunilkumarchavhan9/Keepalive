@@ -1,36 +1,77 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Keepalive
 
-## Getting Started
+Keepalive is an iMessage-native follow-up agent built with Photon. It watches for open loops, remembers what you promised, and nudges you before a thread goes stale.
 
-First, run the development server:
+## What is in this repo
+
+- A Next 16 app with the submission site and an operator console.
+- `app/api/keepalive/*` routes that run the actual command parser and follow-up logic.
+- `scripts/keepalive-agent.ts`, a Photon watcher process for macOS that can read Messages, close loops when replies arrive, and send reminders back into iMessage.
+- A JSON-backed state store at `.keepalive/state.json` for pending follow-ups.
+
+## Local app
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+On non-macOS machines the console runs against seeded mock threads so the agent logic is still testable.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Photon setup
 
-## Learn More
+Install dependencies:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm install
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Grant Full Disk Access to the terminal or IDE that will run the watcher:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Open macOS System Settings.
+2. Go to `Privacy & Security`.
+3. Add your terminal or IDE to `Full Disk Access`.
 
-## Deploy on Vercel
+## Agent scripts
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Inspect runtime readiness:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run agent:doctor
+```
+
+Run the live watcher:
+
+```bash
+KEEPALIVE_CONTROL_CHAT="chat-or-contact-id" npm run agent:watch
+```
+
+Recommended env vars:
+
+- `KEEPALIVE_CONTROL_CHAT`: the chat used to send commands to Keepalive.
+- `KEEPALIVE_NOTIFY_TO`: where reminders and status messages should be sent. Defaults to `KEEPALIVE_CONTROL_CHAT`.
+- `KEEPALIVE_ACCEPT_OWN_COMMANDS=true`: optional. Allows parsing your own outgoing messages in the control thread.
+- `KEEPALIVE_USE_MOCK_DATA=true`: forces mock data even on macOS.
+- `KEEPALIVE_DEBUG=true`: turns on Photon debug logging.
+- `KEEPALIVE_STORE_PATH`: custom path for the persisted loop store.
+
+## Example commands
+
+- `remind me to follow up with Danny on Friday if no reply`
+- `did I reply to Kartik`
+- `who have I been ignoring this week`
+- `what did I promise Bridget`
+- `draft a warm check in for Uncle Raj`
+
+## Current scope
+
+The live agent is deterministic, not LLM-backed. It already handles:
+
+- follow-up reminders
+- reply checks
+- neglected-thread scans
+- promise summaries
+- warm check-in drafts
+
+The next obvious step is adding an LLM layer for better promise extraction and higher-quality drafts while keeping Photon as the source of truth for thread state.
