@@ -3,11 +3,19 @@ import { randomUUID } from "node:crypto";
 import type { ChatSummary, Message } from "@photon-ai/imessage-kit";
 
 import {
+  analyzeForwardedMessageWithAI,
+  draftCheckInWithAI,
+  draftFollowUpWithAI,
+  extractPromiseFromMessages,
+  getKeepaliveAIModel,
+} from "@/lib/keepalive/ai";
+import {
   formatDistanceFromNow,
   formatShortDate,
   parseWhenExpression,
 } from "@/lib/keepalive/time";
 import type {
+  CommandDetail,
   CommandResult,
   FollowUpLoop,
   ParsedCommand,
@@ -20,11 +28,13 @@ const PROMISE_PATTERN =
   /\b(i('| wi)?ll|let me|i can|happy to|i'm going to|i am going to|will send|will follow up|send you)\b/i;
 
 interface ThreadContext {
+  messages: readonly Message[];
   latest: Message | null;
   lastInbound: Message | null;
   lastOutbound: Message | null;
   promise: string | null;
   promiseLines: string[];
+  intelligence: "openai" | "heuristic";
 }
 
 export class KeepaliveService {
@@ -54,6 +64,8 @@ export class KeepaliveService {
         return this.promiseSummary(parsed);
       case "draft-check-in":
         return this.draftCheckIn(parsed);
+      case "forwarded-analysis":
+        return this.forwardedAnalysis(parsed);
       default:
         return {
           ok: false,
@@ -112,6 +124,92 @@ export class KeepaliveService {
     return closed;
   }
 
+  async updateLoop(
+    id: string,
+    input: {
+      action: "snooze" | "edit" | "cancel";
+      when?: string | null;
+      now?: Date;
+    }
+  ): Promise<{
+    ok: boolean;
+    status: number;
+    reply: string;
+    loop: FollowUpLoop | null;
+  }> {
+    const now = input.now ?? new Date();
+
+    if (input.action === "cancel") {
+      const cancelled = await this.store.cancelLoop(id, "cancelled in console");
+
+      if (!cancelled) {
+        return {
+          ok: false,
+          status: 404,
+          reply: "That loop does not exist anymore.",
+          loop: null,
+        };
+      }
+
+      return {
+        ok: true,
+        status: 200,
+        reply: `Cancelled the reminder for ${cancelled.targetName}.`,
+        loop: cancelled,
+      };
+    }
+
+    const expression = input.when?.trim();
+
+    if (!expression) {
+      return {
+        ok: false,
+        status: 400,
+        reply: "Provide a new reminder time like tomorrow 9am or in 2 days.",
+        loop: null,
+      };
+    }
+
+    const nextDueAt = parseWhenExpression(expression, now);
+
+    if (!nextDueAt) {
+      return {
+        ok: false,
+        status: 400,
+        reply: "I could not parse that time. Try tomorrow 9am, Friday, or in 2 days.",
+        loop: null,
+      };
+    }
+
+    const updated = await this.store.updateLoop(id, (loop) => ({
+      ...loop,
+      dueAt: nextDueAt.toISOString(),
+      status: "open",
+      closedAt: null,
+      closedReason: null,
+      reminderText: buildUpdatedReminderText(loop, nextDueAt),
+    }));
+
+    if (!updated) {
+      return {
+        ok: false,
+        status: 404,
+        reply: "That loop does not exist anymore.",
+        loop: null,
+      };
+    }
+
+    return {
+      ok: true,
+      status: 200,
+      reply:
+        input.action === "edit"
+          ? `Updated ${updated.targetName} to ${formatShortDate(nextDueAt)}.`
+          : `Snoozed ${updated.targetName} until ${formatShortDate(nextDueAt)}.`,
+      loop: updated,
+    };
+  }
+
   private async scheduleFollowUp(
     parsed: Extract<ParsedCommand, { type: "schedule-follow-up" }>,
     notifyTo: string | null,
@@ -130,11 +228,17 @@ export class KeepaliveService {
     }
 
     const chat = await this.resolveChat(parsed.contact);
-    const context = await this.describeThread(chat);
-    const draftText = buildFollowUpDraft(
+    const context = await this.describeThread(chat, { useAIForPromise: true });
+    const heuristicDraft = buildFollowUpDraft(
       chat?.displayName ?? parsed.contact,
       context
     );
+    const aiDraft = await draftFollowUpWithAI({
+      contactName: chat?.displayName ?? parsed.contact,
+      promise: context.promise,
+      messages: context.messages,
+    });
+    const draftText = aiDraft?.draft ?? heuristicDraft;
 
     const loop: FollowUpLoop = {
       id: randomUUID(),
@@ -155,6 +259,8 @@ export class KeepaliveService {
         draftText
       ),
       draftText,
+      draftSource: aiDraft?.provider ?? "heuristic",
+      promiseSnapshot: context.promise,
       closedAt: null,
       closedReason: null,
     };
@@ -178,6 +284,10 @@ export class KeepaliveService {
       runtime: this.source.runtime,
       loop,
       reply: parts.join(" "),
+      intelligence: {
+        provider: aiDraft?.provider ?? context.intelligence,
+        model: aiDraft?.model ?? getKeepaliveAIModel(),
+      },
     };
   }
 
@@ -284,7 +394,7 @@ export class KeepaliveService {
     parsed: Extract<ParsedCommand, { type: "promise-summary" }>
   ): Promise<CommandResult> {
     const chat = await this.resolveChat(parsed.contact);
-    const context = await this.describeThread(chat);
+    const context = await this.describeThread(chat, { useAIForPromise: true });
 
     if (!chat) {
       return {
@@ -309,6 +419,10 @@ export class KeepaliveService {
       parsed,
       runtime: this.source.runtime,
       reply: context.promiseLines.slice(0, 3).join("\n"),
+      intelligence: {
+        provider: context.intelligence,
+        model: getKeepaliveAIModel(),
+      },
     };
   }
 
@@ -317,17 +431,60 @@ export class KeepaliveService {
   ): Promise<CommandResult> {
     const chat = await this.resolveChat(parsed.contact);
     const context = await this.describeThread(chat);
-    const draft = buildCheckInDraft(
+    const heuristicDraft = buildCheckInDraft(
       chat?.displayName ?? parsed.contact,
       context,
       parsed.warmth
     );
+    const aiDraft = await draftCheckInWithAI({
+      contactName: chat?.displayName ?? parsed.contact,
+      warmth: parsed.warmth,
+      messages: context.messages,
+    });
+    const draft = aiDraft?.draft ?? heuristicDraft;
 
     return {
       ok: true,
       parsed,
       runtime: this.source.runtime,
       reply: draft,
+      intelligence: {
+        provider: aiDraft?.provider ?? "heuristic",
+        model: aiDraft?.model ?? getKeepaliveAIModel(),
+      },
+    };
+  }
+
+  private async forwardedAnalysis(
+    parsed: Extract<ParsedCommand, { type: "forwarded-analysis" }>
+  ): Promise<CommandResult> {
+    const aiAnalysis = await analyzeForwardedMessageWithAI({
+      label: parsed.label,
+      message: parsed.message,
+    });
+    const details = analyzeForwardedMessage(
+      parsed.message,
+      parsed.label,
+      aiAnalysis
+        ? {
+            ask: aiAnalysis.ask,
+            timing: aiAnalysis.timing,
+            draft: aiAnalysis.draft,
+          }
+        : undefined
+    );
+    const detailLines = details.map((detail) => `${detail.label}: ${detail.value}`);
+
+    return {
+      ok: true,
+      parsed,
+      runtime: this.source.runtime,
+      details,
+      reply: detailLines.join("\n"),
+      intelligence: {
+        provider: aiAnalysis?.provider ?? "heuristic",
+        model: aiAnalysis?.model ?? getKeepaliveAIModel(),
+      },
     };
   }
 
@@ -341,14 +498,21 @@ export class KeepaliveService {
     return exact[0] ?? null;
   }
 
-  private async describeThread(chat: ChatSummary | null): Promise<ThreadContext> {
+  private async describeThread(
+    chat: ChatSummary | null,
+    options: {
+      useAIForPromise?: boolean;
+    } = {}
+  ): Promise<ThreadContext> {
     if (!chat) {
       return {
+        messages: [],
         latest: null,
         lastInbound: null,
         lastOutbound: null,
         promise: null,
         promiseLines: [],
+        intelligence: "heuristic",
       };
     }
 
@@ -359,23 +523,32 @@ export class KeepaliveService {
     });
 
     const latest = result.messages[0] ?? null;
-    const lastInbound =
-      result.messages.find((message) => !message.isFromMe) ?? null;
-    const lastOutbound =
-      result.messages.find((message) => message.isFromMe) ?? null;
+    const lastInbound = result.messages.find((message) => !message.isFromMe) ?? null;
+    const lastOutbound = result.messages.find((message) => message.isFromMe) ?? null;
     const promiseMessages = result.messages.filter(
       (message) =>
         message.isFromMe && Boolean(message.text) && PROMISE_PATTERN.test(message.text!)
     );
+    const aiPromise = options.useAIForPromise
+      ? await extractPromiseFromMessages(chat.displayName ?? chat.chatId, result.messages)
+      : null;
+    const promise = aiPromise?.promise ?? promiseMessages[0]?.text ?? null;
+    const promiseLines = promiseMessages.map(
+      (message) => `${formatShortDate(message.date)}: ${message.text}`
+    );
+
+    if (promise && aiPromise?.promise && !promiseLines.length) {
+      promiseLines.push(`Latest thread read: ${promise}`);
+    }
 
     return {
+      messages: result.messages,
       latest,
       lastInbound,
       lastOutbound,
-      promise: promiseMessages[0]?.text ?? null,
-      promiseLines: promiseMessages.map(
-        (message) => `${formatShortDate(message.date)}: ${message.text}`
-      ),
+      promise,
+      promiseLines,
+      intelligence: aiPromise ? "openai" : "heuristic",
     };
   }
 
@@ -400,8 +573,30 @@ export class KeepaliveService {
   }
 }
 
+function buildUpdatedReminderText(loop: FollowUpLoop, dueAt: Date): string {
+  const parts = [
+    `No reply yet from ${loop.targetName}.`,
+    `Reminder time: ${formatShortDate(dueAt)}.`,
+  ];
+
+  if (loop.promiseSnapshot) {
+    parts.push(`You said: "${truncate(loop.promiseSnapshot, 90)}"`);
+  }
+
+  if (loop.draftText) {
+    parts.push(`Draft ready: ${loop.draftText}`);
+  }
+
+  return parts.join(" ");
+}
+
 export function parseCommand(input: string): ParsedCommand {
   const trimmed = input.trim();
+  const forwarded = parseForwardedCommand(trimmed);
+
+  if (forwarded) {
+    return forwarded;
+  }
 
   let match = trimmed.match(
     /^remind me to follow up with (.+?) (on|in) (.+?)(?: if no reply)?$/i
@@ -476,6 +671,36 @@ export function parseCommand(input: string): ParsedCommand {
   };
 }
 
+function parseForwardedCommand(input: string): Extract<
+  ParsedCommand,
+  { type: "forwarded-analysis" }
+> | null {
+  let match = input.match(/^forwarded(?:\s+([^:]+))?:\s*(.+)$/i);
+
+  if (match) {
+    const [, label, message] = match;
+    return {
+      type: "forwarded-analysis",
+      label: label?.trim() ?? null,
+      message: message.trim(),
+      originalText: input,
+    };
+  }
+
+  match = input.match(/^forwarded\s+(.+)$/i);
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    type: "forwarded-analysis",
+    label: null,
+    message: match[1].trim(),
+    originalText: input,
+  };
+}
+
 function buildReminderText(
   name: string,
   dueAt: Date,
@@ -519,7 +744,7 @@ function buildCheckInDraft(
       ? `Hey ${firstName(name)}`
       : `Hey ${firstName(name)}, hope you are doing well`;
 
-  if (context.lastInbound?.text) {
+  if (context.lastInbound?.text && !isGenericCheckInMessage(context.lastInbound.text)) {
     return `${opener}. I was thinking about your note on ${extractTopic(
       context.lastInbound.text
     )} and wanted to check in. No pressure to reply fast.`;
@@ -543,4 +768,151 @@ function truncate(text: string, length: number): string {
 
 function firstName(name: string): string {
   return name.split(" ")[0] ?? name;
+}
+
+function analyzeForwardedMessage(
+  message: string,
+  label: string | null,
+  override?: {
+    ask: string;
+    timing: string;
+    draft: string;
+  }
+): CommandDetail[] {
+  const ask = override?.ask ?? extractAsk(message);
+  const deadline = extractDeadline(message);
+  const followUp =
+    override?.timing ??
+    (deadline
+      ? `Follow up ${formatDeadline(deadline)} if you have not replied.`
+      : "Follow up in 2 to 3 days if the loop stays open.");
+  const draft = override?.draft ?? buildForwardedDraft(message, ask);
+
+  const details: CommandDetail[] = [];
+
+  if (label) {
+    details.push({
+      label: "Source",
+      value: toTitleCase(label),
+    });
+  }
+
+  details.push({
+    label: "Ask",
+    value: ask,
+  });
+
+  details.push({
+    label: "Timing",
+    value: followUp,
+  });
+
+  details.push({
+    label: "Draft",
+    value: draft,
+  });
+
+  return details;
+}
+
+function extractAsk(message: string): string {
+  const normalized = stripForwardedLead(message.trim().replace(/\s+/g, " "));
+  const sentenceParts = normalized
+    .split(/(?<=[.!?])\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const candidate =
+    sentenceParts.find((part) =>
+      /\b(can you|could you|please|need you to|send|share|review|check|follow up|let me know)\b/i.test(
+        part
+      )
+    ) ?? sentenceParts[0] ?? normalized;
+
+  return truncate(normalizeAsk(candidate), 120);
+}
+
+function extractDeadline(message: string): string | null {
+  const match = message.match(
+    /\b(by\s+[A-Z]?[a-z]+(?:\s+\d{1,2})?|before\s+[A-Z]?[a-z]+(?:\s+\d{1,2})?|tomorrow|today|this week|next week|friday|monday|tuesday|wednesday|thursday|saturday|sunday)\b/i
+  );
+
+  return match ? match[0] : null;
+}
+
+function buildForwardedDraft(message: string, ask: string): string {
+  const request = cleanForwardedRequest(ask === message ? message : ask);
+  return `Hey, got it. I can take care of ${request}. I will circle back shortly with an update.`;
+}
+
+function toTitleCase(value: string): string {
+  return value.replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatDeadline(value: string): string {
+  return /^(before|by)\b/i.test(value) ? value : `before ${value}`;
+}
+
+function cleanForwardedRequest(value: string): string {
+  const cleaned = stripForwardedLead(value)
+    .replace(/^hey,?\s*/i, "")
+    .replace(/^you can\s+/i, "")
+    .replace(/^can you\s+/i, "")
+    .replace(/^could you\s+/i, "")
+    .replace(/^please\s+/i, "")
+    .replace(/[.?!]+$/g, "")
+    .trim();
+
+  const normalized = cleaned
+    .replace(/^send\b/i, "sending")
+    .replace(/^share\b/i, "sharing")
+    .replace(/^review\b/i, "reviewing")
+    .replace(/^check\b/i, "checking")
+    .replace(/^follow up\b/i, "following up")
+    .replace(/^let me know\b/i, "letting you know");
+
+  return truncate(decapitalize(normalized || extractTopic(value)), 64);
+}
+
+function stripForwardedLead(value: string): string {
+  return value
+    .replace(/^hey,?\s*/i, "")
+    .replace(/^hi,?\s*/i, "")
+    .replace(/^just checking (whether|if)\s+/i, "")
+    .replace(/^checking (whether|if)\s+/i, "")
+    .trim();
+}
+
+function normalizeAsk(value: string): string {
+  const cleaned = value
+    .replace(/^send\b/i, "Send")
+    .replace(/^share\b/i, "Share")
+    .replace(/^review\b/i, "Review")
+    .replace(/^check\b/i, "Check")
+    .replace(/^follow up\b/i, "Follow up")
+    .replace(/^let me know\b/i, "Let me know")
+    .replace(/^you can\s+/i, "")
+    .trim();
+
+  return ensureSentence(cleaned);
+}
+
+function ensureSentence(value: string): string {
+  const trimmed = value.replace(/[.?!]+$/g, "").trim();
+
+  if (!trimmed) {
+    return value;
+  }
+
+  return `${trimmed}.`;
+}
+
+function decapitalize(value: string): string {
+  return value ? `${value.charAt(0).toLowerCase()}${value.slice(1)}` : value;
+}
+
+function isGenericCheckInMessage(value: string): boolean {
+  return /\b(how are you|how you are doing|hope you are well|checking in|just checking)\b/i.test(
+    value
+  );
 }

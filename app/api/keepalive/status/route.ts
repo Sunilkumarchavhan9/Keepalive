@@ -10,15 +10,19 @@ export async function GET() {
   const store = new KeepaliveStore();
 
   try {
-    const loops = await store.listOpenLoops();
+    const loops = await store.listActiveLoops();
 
     return NextResponse.json({
       runtime: session.source.runtime,
       loops: loops.map((loop) => ({
         id: loop.id,
         targetName: loop.targetName,
+        originalCommand: loop.originalCommand,
         dueAt: loop.dueAt,
         status: loop.status,
+        draftText: loop.draftText,
+        draftSource: loop.draftSource ?? "heuristic",
+        promiseSnapshot: loop.promiseSnapshot,
       })),
     });
   } finally {

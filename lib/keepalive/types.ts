@@ -14,6 +14,8 @@ export interface FollowUpLoop {
   lastOutboundAt: string | null;
   reminderText: string;
   draftText: string | null;
+  draftSource: "openai" | "heuristic";
+  promiseSnapshot: string | null;
   closedAt: string | null;
   closedReason: string | null;
 }
@@ -51,9 +53,20 @@ export type ParsedCommand =
       originalText: string;
     }
   | {
+      type: "forwarded-analysis";
+      label: string | null;
+      message: string;
+      originalText: string;
+    }
+  | {
       type: "unknown";
       originalText: string;
     };
+
+export interface CommandDetail {
+  label: string;
+  value: string;
+}
 
 export interface RuntimeInfo {
   mode: "photon" | "mock";
@@ -63,12 +76,19 @@ export interface RuntimeInfo {
   reason: string | null;
 }
 
+export interface IntelligenceInfo {
+  provider: "openai" | "heuristic";
+  model: string | null;
+}
+
 export interface CommandResult {
   ok: boolean;
   reply: string;
   parsed: ParsedCommand;
   runtime: RuntimeInfo;
   loop?: FollowUpLoop;
+  details?: CommandDetail[];
+  intelligence?: IntelligenceInfo;
 }
 
 export interface ReminderSweepResult {

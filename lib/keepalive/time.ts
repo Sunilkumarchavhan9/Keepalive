@@ -18,6 +18,16 @@ export function parseWhenExpression(
     return withTime(addDays(now, 1), 9, 0);
   }
 
+  const tomorrowTimeMatch = trimmed.match(/^tomorrow(?:\s+(.+))?$/);
+
+  if (tomorrowTimeMatch) {
+    const parsedTime = parseClock(tomorrowTimeMatch[1]);
+    if (!parsedTime) {
+      return null;
+    }
+    return withTime(addDays(now, 1), parsedTime.hours, parsedTime.minutes);
+  }
+
   const inMatch = trimmed.match(
     /^in\s+(\d+)\s+(minute|minutes|hour|hours|day|days|week|weeks)$/
   );

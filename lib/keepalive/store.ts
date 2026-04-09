@@ -38,6 +38,13 @@ export class KeepaliveStore {
       .sort((left, right) => left.dueAt.localeCompare(right.dueAt));
   }
 
+  async listActiveLoops(): Promise<FollowUpLoop[]> {
+    const state = await this.getState();
+    return state.loops
+      .filter((loop) => loop.status !== "closed" && loop.status !== "cancelled")
+      .sort((left, right) => left.dueAt.localeCompare(right.dueAt));
+  }
+
   async saveLoop(loop: FollowUpLoop): Promise<void> {
     const state = await this.getState();
     const existingIndex = state.loops.findIndex((item) => item.id === loop.id);
@@ -74,6 +81,15 @@ export class KeepaliveStore {
     return this.updateLoop(id, (loop) => ({
       ...loop,
       status: "closed",
+      closedAt: new Date().toISOString(),
+      closedReason: reason,
+    }));
+  }
+
+  async cancelLoop(id: string, reason: string): Promise<FollowUpLoop | null> {
+    return this.updateLoop(id, (loop) => ({
+      ...loop,
+      status: "cancelled",
       closedAt: new Date().toISOString(),
       closedReason: reason,
     }));
