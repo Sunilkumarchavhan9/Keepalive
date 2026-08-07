@@ -97,11 +97,7 @@ export function KeepaliveConsole() {
   const [loopActionId, setLoopActionId] = useState<string | null>(null);
   const [loopEdits, setLoopEdits] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    void loadStatus();
-  }, []);
-
-  async function loadStatus() {
+async function loadStatus() {
     const res = await fetch("/api/keepalive/status", { cache: "no-store" });
     const payload = (await res.json()) as StatusPayload;
     setStatus(payload);
@@ -116,7 +112,11 @@ export function KeepaliveConsole() {
     });
   }
 
-  async function runCommand() {
+  useEffect(() => {
+    void Promise.resolve().then(loadStatus);
+  }, []);
+
+async function runCommand() {
     setPending(true);
     setNotice("Running command...");
 
