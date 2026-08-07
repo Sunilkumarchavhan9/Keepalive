@@ -81,3 +81,14 @@ The live agent now handles:
 - snooze, edit, and cancel controls for active loops in the web console
 
 Photon remains the source of truth for thread state. The OpenAI layer is optional and only upgrades extraction and drafting.
+
+## Local Development
+
+Add a short Local Development section explaining how to install dependencies and run the project locally.
+
+Run the project checks locally:
+
+```bash
+npm run lint
+npm run lint
+```
