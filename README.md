@@ -92,3 +92,14 @@ Run the project checks locally:
 npm run lint
 npm run lint
 ```
+
+## Epoch Evidence
+
+Add a short Evidence Verification section explaining how Epoch records test output and review evidence.
+
+Run the project checks locally:
+
+```bash
+npm run lint
+npm run lint
+```
